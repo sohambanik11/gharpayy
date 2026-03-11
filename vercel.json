@@ -1,5 +1,10 @@
-{
+echo '{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
-}
+}' > vercel.json
+git add vercel.json
+git commit -m "fix vercel config"
+git push
