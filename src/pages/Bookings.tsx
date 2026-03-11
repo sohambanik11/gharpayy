@@ -218,3 +218,12 @@ const Bookings = () => {
 };
 
 export default Bookings;
+import { PaymentButton } from '@/components/PaymentButton';
+
+<PaymentButton
+  amount={500}
+  customerName="Test Customer"
+  customerPhone="9876543210"
+  description="Test PG Booking"
+  onSuccess={(ref) => console.log('Payment ref:', ref)}
+/>

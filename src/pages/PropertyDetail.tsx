@@ -9,32 +9,35 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { usePublicProperty, useCreateReservation, useConfirmReservation, useSimilarProperties } from '@/hooks/usePublicData';
+import { usePublicProperty, useCreateReservation, useSimilarProperties } from '@/hooks/usePublicData';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import PropertyChat from '@/components/PropertyChat';
 import NearbyLandmarks from '@/components/NearbyLandmarks';
+import { PaymentButton } from '@/components/PaymentButton';
+import ScheduleVisitDialog from '@/components/ScheduleVisitDialog';
 
 const AMENITY_ICONS: Record<string, any> = {
   WiFi: Wifi, Food: Coffee, Laundry: Shirt, Security: ShieldCheck, Cleaning: Sparkles,
 };
 
-type ActionMode = null | 'chat' | 'virtual_tour' | 'schedule_visit' | 'pre_book';
+type ActionMode = null | 'chat' | 'virtual_tour' | 'pre_book';
 
 export default function PropertyDetail() {
   const { propertyId } = useParams();
   const navigate = useNavigate();
   const { data: property, isLoading } = usePublicProperty(propertyId);
   const createReservation = useCreateReservation();
-  const confirmReservation = useConfirmReservation();
 
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [selectedBed, setSelectedBed] = useState<any>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '', moveInDate: '' });
   const [reservationResult, setReservationResult] = useState<any>(null);
   const [heroIdx, setHeroIdx] = useState(0);
+  const [paymentDone, setPaymentDone] = useState(false);
 
   const { data: similarProperties } = useSimilarProperties(property?.area, property?.city, propertyId);
 
@@ -66,7 +69,8 @@ export default function PropertyDetail() {
     if (!rents.length) return p.price_range || '—';
     return `₹${Math.min(...rents).toLocaleString()}`;
   };
-  const getSimBeds = (p: any) => (p.rooms || []).flatMap((r: any) => (r.beds || []).filter((b: any) => b.status === 'vacant')).length;
+  const getSimBeds = (p: any) =>
+    (p.rooms || []).flatMap((r: any) => (r.beds || []).filter((b: any) => b.status === 'vacant')).length;
 
   const handlePreBook = async () => {
     if (!selectedBed || !selectedRoom || !customerForm.name || !customerForm.phone) {
@@ -92,19 +96,15 @@ export default function PropertyDetail() {
     }
   };
 
-  const handleConfirmPayment = async () => {
-    if (!reservationResult?.reservation_id) return;
-    try {
-      await confirmReservation.mutateAsync({
-        reservation_id: reservationResult.reservation_id,
-        payment_reference: 'SIM_' + Date.now(),
-      });
-      toast.success('Booking confirmed! Our team will contact you shortly.');
+  const handlePaymentSuccess = (ref: string) => {
+    setPaymentDone(true);
+    toast.success('Payment initiated! Our team will confirm your booking within 30 minutes.');
+    setTimeout(() => {
       setActionMode(null);
       setReservationResult(null);
-    } catch (e: any) {
-      toast.error(e.message);
-    }
+      setPaymentDone(false);
+      navigate('/');
+    }, 2000);
   };
 
   const photos = property.photos || [];
@@ -114,7 +114,10 @@ export default function PropertyDetail() {
       {/* Nav */}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <button onClick={() => navigate('/explore')} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button
+            onClick={() => navigate('/explore')}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
             <ArrowLeft size={16} /> Back to search
           </button>
           <button onClick={() => navigate('/')} className="flex items-center gap-2">
@@ -130,11 +133,16 @@ export default function PropertyDetail() {
         {/* Hero Gallery */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-2xl overflow-hidden">
-            <div className="aspect-[4/3] bg-muted relative cursor-pointer" onClick={() => setHeroIdx((heroIdx + 1) % Math.max(photos.length, 1))}>
+            <div
+              className="aspect-[4/3] bg-muted relative cursor-pointer"
+              onClick={() => setHeroIdx((heroIdx + 1) % Math.max(photos.length, 1))}
+            >
               {photos.length > 0 ? (
                 <img src={photos[heroIdx % photos.length]} alt={property.name} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center"><Bed size={64} className="text-muted-foreground/20" /></div>
+                <div className="w-full h-full flex items-center justify-center">
+                  <Bed size={64} className="text-muted-foreground/20" />
+                </div>
               )}
               {photos.length > 1 && (
                 <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-sm text-[11px] font-medium">
@@ -144,11 +152,17 @@ export default function PropertyDetail() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               {[1, 2, 3, 4].map(i => (
-                <div key={i} className="aspect-[4/3] bg-muted rounded-lg overflow-hidden cursor-pointer" onClick={() => photos[i] && setHeroIdx(i)}>
+                <div
+                  key={i}
+                  className="aspect-[4/3] bg-muted rounded-lg overflow-hidden cursor-pointer"
+                  onClick={() => photos[i] && setHeroIdx(i)}
+                >
                   {photos[i] ? (
                     <img src={photos[i]} alt="" className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center"><Bed size={24} className="text-muted-foreground/15" /></div>
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Bed size={24} className="text-muted-foreground/15" />
+                    </div>
                   )}
                 </div>
               ))}
@@ -163,17 +177,28 @@ export default function PropertyDetail() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 {(property as any).is_verified && (
-                  <Badge variant="secondary" className="text-[11px] gap-1"><Shield size={11} className="text-success" /> Verified by Gharpayy</Badge>
+                  <Badge variant="secondary" className="text-[11px] gap-1">
+                    <Shield size={11} className="text-success" /> Verified by Gharpayy
+                  </Badge>
                 )}
                 {property.gender_allowed && property.gender_allowed !== 'any' && (
-                  <Badge variant="secondary" className="text-[11px] capitalize">{property.gender_allowed} only</Badge>
+                  <Badge variant="secondary" className="text-[11px] capitalize">
+                    {property.gender_allowed} only
+                  </Badge>
                 )}
               </div>
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground mb-1">{property.name}</h1>
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground mb-1">
+                {property.name}
+              </h1>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1"><MapPin size={14} /> {[property.area, property.city].filter(Boolean).join(', ')}</span>
+                <span className="flex items-center gap-1">
+                  <MapPin size={14} /> {[property.area, property.city].filter(Boolean).join(', ')}
+                </span>
                 {(property as any).rating && (
-                  <span className="flex items-center gap-1"><Star size={14} className="fill-accent text-accent" /> {(property as any).rating} ({(property as any).total_reviews || 0} reviews)</span>
+                  <span className="flex items-center gap-1">
+                    <Star size={14} className="fill-accent text-accent" />
+                    {(property as any).rating} ({(property as any).total_reviews || 0} reviews)
+                  </span>
                 )}
               </div>
             </div>
@@ -241,18 +266,28 @@ export default function PropertyDetail() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <h3 className="font-medium text-sm">Room {room.room_number}</h3>
-                            {room.room_type && <Badge variant="secondary" className="text-[11px] capitalize">{room.room_type}</Badge>}
-                            {room.floor && <span className="text-[10px] text-muted-foreground">Floor {room.floor}</span>}
+                            {room.room_type && (
+                              <Badge variant="secondary" className="text-[11px] capitalize">{room.room_type}</Badge>
+                            )}
+                            {room.floor && (
+                              <span className="text-[10px] text-muted-foreground">Floor {room.floor}</span>
+                            )}
                           </div>
                           <Badge variant={roomVacant > 0 ? 'default' : 'secondary'} className="text-[11px]">
                             {roomVacant} / {room.bed_count} beds free
                           </Badge>
                         </div>
                         <div className="flex items-baseline justify-between mb-3">
-                          <span className="text-xl font-semibold">{rent ? `₹${rent.toLocaleString()}` : '—'}</span>
+                          <span className="text-xl font-semibold">
+                            {rent ? `₹${rent.toLocaleString()}` : '—'}
+                          </span>
                           <span className="text-[11px] text-muted-foreground">/bed/month</span>
                         </div>
-                        {room.furnishing && <p className="text-[11px] text-muted-foreground mb-2">{room.furnishing} · {room.bathroom_type || 'Shared'} bathroom</p>}
+                        {room.furnishing && (
+                          <p className="text-[11px] text-muted-foreground mb-2">
+                            {room.furnishing} · {room.bathroom_type || 'Shared'} bathroom
+                          </p>
+                        )}
                         {roomVacant > 0 && (
                           <div className="flex gap-2 flex-wrap">
                             {(room.beds || []).filter((b: any) => b.status === 'vacant').map((bed: any) => (
@@ -280,13 +315,25 @@ export default function PropertyDetail() {
             <Separator />
 
             {/* Nearby Landmarks */}
-            <NearbyLandmarks latitude={(property as any).latitude} longitude={(property as any).longitude} city={property.city || undefined} />
+            <NearbyLandmarks
+              latitude={(property as any).latitude}
+              longitude={(property as any).longitude}
+              city={property.city || undefined}
+            />
 
             {/* Confidence Signals */}
             <div className="rounded-xl bg-secondary/50 p-5 flex flex-wrap gap-6">
-              {(property as any).is_verified && <div className="flex items-center gap-2 text-sm"><Shield size={16} className="text-success" /> Verified by Gharpayy</div>}
-              <div className="flex items-center gap-2 text-sm"><Clock size={16} className="text-muted-foreground" /> Updated recently</div>
-              <div className="flex items-center gap-2 text-sm"><Users size={16} className="text-muted-foreground" /> {vacantBeds.length} beds remaining</div>
+              {(property as any).is_verified && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Shield size={16} className="text-success" /> Verified by Gharpayy
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-sm">
+                <Clock size={16} className="text-muted-foreground" /> Updated recently
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Users size={16} className="text-muted-foreground" /> {vacantBeds.length} beds remaining
+              </div>
             </div>
 
             {/* Similar Properties */}
@@ -306,7 +353,9 @@ export default function PropertyDetail() {
                           {sp.photos?.[0] ? (
                             <img src={sp.photos[0]} alt={sp.name} className="w-full h-full object-cover" loading="lazy" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center"><Bed size={24} className="text-muted-foreground/20" /></div>
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Bed size={24} className="text-muted-foreground/20" />
+                            </div>
                           )}
                         </div>
                         <div className="p-3">
@@ -333,7 +382,11 @@ export default function PropertyDetail() {
                   <h3 className="font-semibold text-base mb-1">Interested in this PG?</h3>
                   <p className="text-[11px] text-muted-foreground mb-4">Choose how you'd like to proceed</p>
 
-                  <Button variant="outline" className="w-full justify-start gap-3 h-12" onClick={() => setChatOpen(true)}>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-3 h-12"
+                    onClick={() => setChatOpen(true)}
+                  >
                     <MessageCircle size={18} className="text-info" />
                     <div className="text-left">
                       <p className="text-sm font-medium">Chat with Gharpayy</p>
@@ -341,7 +394,11 @@ export default function PropertyDetail() {
                     </div>
                   </Button>
 
-                  <Button variant="outline" className="w-full justify-start gap-3 h-12" onClick={() => setActionMode('virtual_tour')}>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-3 h-12"
+                    onClick={() => setActionMode('virtual_tour')}
+                  >
                     <Video size={18} className="text-accent" />
                     <div className="text-left">
                       <p className="text-sm font-medium">Book a Virtual Tour</p>
@@ -349,7 +406,12 @@ export default function PropertyDetail() {
                     </div>
                   </Button>
 
-                  <Button variant="outline" className="w-full justify-start gap-3 h-12" onClick={() => setActionMode('schedule_visit')}>
+                  {/* Schedule Visit — now wired to ScheduleVisitDialog */}
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-3 h-12"
+                    onClick={() => setScheduleVisitOpen(true)}
+                  >
                     <CalendarCheck size={18} className="text-success" />
                     <div className="text-left">
                       <p className="text-sm font-medium">Schedule a Visit</p>
@@ -359,11 +421,16 @@ export default function PropertyDetail() {
 
                   <Separator />
 
-                  <Button className="w-full h-12 gap-2 bg-accent hover:bg-accent/90 text-accent-foreground" onClick={() => setActionMode('pre_book')}>
+                  <Button
+                    className="w-full h-12 gap-2 bg-accent hover:bg-accent/90 text-accent-foreground"
+                    onClick={() => setActionMode('pre_book')}
+                  >
                     <CreditCard size={18} />
                     Pre-Book Now — ₹1,000
                   </Button>
-                  <p className="text-[11px] text-muted-foreground text-center">Reserve a bed instantly. Fully refundable within 24h.</p>
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Reserve a bed instantly. Fully refundable within 24h.
+                  </p>
                 </CardContent>
               </Card>
 
@@ -372,7 +439,12 @@ export default function PropertyDetail() {
                 <h4 className="text-sm font-medium mb-3 text-muted-foreground">Explore nearby areas</h4>
                 <div className="flex flex-wrap gap-2">
                   {['Bellandur', 'Brookefield', 'Whitefield', 'Marathahalli', 'Sarjapur Road', 'HSR Layout'].map(area => (
-                    <Badge key={area} variant="secondary" className="cursor-pointer text-[11px]" onClick={() => navigate(`/explore?area=${area}`)}>
+                    <Badge
+                      key={area}
+                      variant="secondary"
+                      className="cursor-pointer text-[11px]"
+                      onClick={() => navigate(`/explore?area=${area}`)}
+                    >
                       {area} <ChevronRight size={10} className="ml-0.5" />
                     </Badge>
                   ))}
@@ -386,77 +458,139 @@ export default function PropertyDetail() {
       {/* Chat Widget */}
       <PropertyChat propertyName={property.name} isOpen={chatOpen} onClose={() => setChatOpen(false)} />
 
+      {/* Schedule Visit — wired to Supabase via ScheduleVisitDialog */}
+      <ScheduleVisitDialog
+        open={scheduleVisitOpen}
+        onClose={() => setScheduleVisitOpen(false)}
+        prefilledPropertyId={property.id}
+      />
+
       {/* Pre-Book Dialog */}
-      <Dialog open={actionMode === 'pre_book'} onOpenChange={(o) => { if (!o) { setActionMode(null); setReservationResult(null); } }}>
+      <Dialog
+        open={actionMode === 'pre_book'}
+        onOpenChange={(o) => {
+          if (!o) { setActionMode(null); setReservationResult(null); setPaymentDone(false); }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{reservationResult ? 'Complete Payment' : 'Pre-Book a Bed'}</DialogTitle>
+            <DialogTitle>
+              {paymentDone ? 'Booking Confirmed!' : reservationResult ? 'Complete Payment' : 'Pre-Book a Bed'}
+            </DialogTitle>
           </DialogHeader>
-          {!reservationResult ? (
+
+          {/* Step 1 — fill details */}
+          {!reservationResult && !paymentDone && (
             <div className="space-y-4">
               {selectedBed ? (
                 <div className="p-3 rounded-lg bg-secondary text-sm">
                   <strong>{property.name}</strong> · Room {selectedRoom?.room_number} · Bed {selectedBed.bed_number}
-                  <br /><span className="text-muted-foreground">₹{(selectedRoom?.rent_per_bed || selectedRoom?.expected_rent || 0).toLocaleString()}/month</span>
+                  <br />
+                  <span className="text-muted-foreground">
+                    ₹{(selectedRoom?.rent_per_bed || selectedRoom?.expected_rent || 0).toLocaleString()}/month
+                  </span>
                 </div>
               ) : (
-                <p className="text-sm text-destructive">Please select a bed from the rooms section first.</p>
+                <p className="text-sm text-destructive">
+                  Please select a bed from the rooms section first.
+                </p>
               )}
               <div className="space-y-3">
-                <div><Label>Full Name *</Label><Input value={customerForm.name} onChange={e => setCustomerForm(f => ({ ...f, name: e.target.value }))} /></div>
-                <div><Label>Phone *</Label><Input value={customerForm.phone} onChange={e => setCustomerForm(f => ({ ...f, phone: e.target.value }))} /></div>
-                <div><Label>Email</Label><Input value={customerForm.email} onChange={e => setCustomerForm(f => ({ ...f, email: e.target.value }))} /></div>
-                <div><Label>Move-in Date</Label><Input type="date" value={customerForm.moveInDate} onChange={e => setCustomerForm(f => ({ ...f, moveInDate: e.target.value }))} /></div>
+                <div>
+                  <Label>Full Name *</Label>
+                  <Input
+                    value={customerForm.name}
+                    onChange={e => setCustomerForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Your full name"
+                  />
+                </div>
+                <div>
+                  <Label>Phone *</Label>
+                  <Input
+                    value={customerForm.phone}
+                    onChange={e => setCustomerForm(f => ({ ...f, phone: e.target.value }))}
+                    placeholder="+91 XXXXX XXXXX"
+                  />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    value={customerForm.email}
+                    onChange={e => setCustomerForm(f => ({ ...f, email: e.target.value }))}
+                    placeholder="optional"
+                  />
+                </div>
+                <div>
+                  <Label>Move-in Date</Label>
+                  <Input
+                    type="date"
+                    value={customerForm.moveInDate}
+                    onChange={e => setCustomerForm(f => ({ ...f, moveInDate: e.target.value }))}
+                  />
+                </div>
               </div>
               <DialogFooter>
-                <Button onClick={handlePreBook} disabled={!selectedBed || !customerForm.name || !customerForm.phone || createReservation.isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-                  {createReservation.isPending ? 'Reserving...' : 'Reserve Bed — ₹1,000'}
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-success/10 border border-success/20 text-center">
-                <Check size={32} className="mx-auto text-success mb-2" />
-                <p className="font-medium text-sm">Bed Reserved!</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Complete payment within 10 minutes to confirm.</p>
-              </div>
-              <div className="text-center">
-                <p className="text-3xl font-bold mb-1">₹1,000</p>
-                <p className="text-[11px] text-muted-foreground">Reservation Fee (adjusted against first month rent)</p>
-              </div>
-              <DialogFooter>
-                <Button onClick={handleConfirmPayment} disabled={confirmReservation.isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-                  {confirmReservation.isPending ? 'Processing...' : 'Simulate Payment ₹1,000'}
+                <Button
+                  onClick={handlePreBook}
+                  disabled={!selectedBed || !customerForm.name || !customerForm.phone || createReservation.isPending}
+                  className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+                >
+                  {createReservation.isPending ? 'Reserving...' : 'Reserve Bed — Proceed to Pay'}
                 </Button>
               </DialogFooter>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
 
-      {/* Schedule Visit Dialog */}
-      <Dialog open={actionMode === 'schedule_visit'} onOpenChange={(o) => !o && setActionMode(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Schedule a Visit</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div><Label>Your Name</Label><Input placeholder="Full name" /></div>
-            <div><Label>Phone</Label><Input placeholder="+91..." /></div>
-            <div><Label>Preferred Date</Label><Input type="date" /></div>
-            <div><Label>Preferred Time</Label>
-              <Select>
-                <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
-                <SelectContent>
-                  {['10:00 AM', '12:00 PM', '2:00 PM', '4:00 PM', '6:00 PM'].map(t => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Step 2 — real UPI payment */}
+          {reservationResult && !paymentDone && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-success/10 border border-success/20 text-center">
+                <Check size={28} className="mx-auto text-success mb-2" />
+                <p className="font-medium text-sm">Bed Reserved!</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Complete UPI payment within 10 minutes to confirm your booking.
+                </p>
+              </div>
+
+              <div className="text-center">
+                <p className="text-3xl font-bold mb-0.5">₹1,000</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Reservation fee · Adjusted against first month rent
+                </p>
+              </div>
+
+              {/* Real PaymentButton — replaces Simulate Payment */}
+              <div className="flex justify-center pt-1">
+                <PaymentButton
+                  amount={1000}
+                  reservationId={reservationResult?.reservation_id}
+                  customerName={customerForm.name}
+                  customerPhone={customerForm.phone}
+                  customerEmail={customerForm.email}
+                  description={`Bed ${selectedBed?.bed_number} · ${property.name}`}
+                  onSuccess={handlePaymentSuccess}
+                  label="Pay Reservation Fee"
+                />
+              </div>
+
+              <p className="text-center text-[10px] text-muted-foreground">
+                🔒 Secure UPI payment · Fully refundable within 24 hours
+              </p>
             </div>
-            <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" onClick={() => { toast.success("Visit request submitted! We'll confirm shortly."); setActionMode(null); }}>
-              Request Visit
-            </Button>
-          </div>
+          )}
+
+          {/* Step 3 — success */}
+          {paymentDone && (
+            <div className="flex flex-col items-center py-6 gap-3 text-center">
+              <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center">
+                <Check size={28} className="text-success" />
+              </div>
+              <p className="font-semibold text-foreground">Booking Confirmed!</p>
+              <p className="text-xs text-muted-foreground">
+                Our team will contact you on {customerForm.phone} within 30 minutes.
+              </p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -465,10 +599,13 @@ export default function PropertyDetail() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Book a Virtual Tour</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">See the property from the comfort of your home. A Gharpayy agent will give you a live video walkthrough.</p>
+            <p className="text-sm text-muted-foreground">
+              See the property from the comfort of your home. A Gharpayy agent will give you a live video walkthrough.
+            </p>
             <div><Label>Your Name</Label><Input placeholder="Full name" /></div>
             <div><Label>Phone / WhatsApp</Label><Input placeholder="+91..." /></div>
-            <div><Label>Preferred Slot</Label>
+            <div>
+              <Label>Preferred Slot</Label>
               <Select>
                 <SelectTrigger><SelectValue placeholder="Select time" /></SelectTrigger>
                 <SelectContent>
@@ -479,7 +616,13 @@ export default function PropertyDetail() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" onClick={() => { toast.success('Virtual tour booked! Check WhatsApp for the link.'); setActionMode(null); }}>
+            <Button
+              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+              onClick={() => {
+                toast.success('Virtual tour booked! Check WhatsApp for the link.');
+                setActionMode(null);
+              }}
+            >
               Book Virtual Tour
             </Button>
           </div>
